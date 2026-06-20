@@ -118,3 +118,9 @@ Next planned documents:
 - Added project status tracking.
 - Established `ios-app/` as the official Swift source folder.
 - Prepared project for baseline versioning.
+## 2026-06-15 - Baseline Version
+
+- Added `docs/current-status.md`.
+- Added `docs/releases.md`.
+- Defined internal baseline version: `v0.1.0 — GitHub Baseline`.
+- Marked the project as ready for structured MVP development.
