@@ -111,3 +111,10 @@ Next planned documents:
 * Data model
 * UI flow
 * Codex prompts archive
+## 2026-06-15 - GitHub Source Import
+
+- Added Swift app files under `ios-app/`.
+- Added current project documentation.
+- Added project status tracking.
+- Established `ios-app/` as the official Swift source folder.
+- Prepared project for baseline versioning.
