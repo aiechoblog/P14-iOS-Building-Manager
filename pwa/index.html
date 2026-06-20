@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="P14">
+  <title>P14 مدیریت ساختمان</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">P14</p>
+        <h1 id="app-title">مدیریت ساختمان</h1>
+      </div>
+      <select id="month-select" class="month-select" aria-label="انتخاب ماه"></select>
+    </header>
+
+    <main id="app" class="app-main" tabindex="-1"></main>
+
+    <nav class="bottom-nav" aria-label="منوی اصلی">
+      <button data-view="dashboard" class="active">داشبورد</button>
+      <button data-view="units">واحدها</button>
+      <button data-view="payments">پرداخت</button>
+      <button data-view="expenses">هزینه</button>
+      <button data-view="bills">قبض ها</button>
+      <button data-view="debtors">بدهکاران</button>
+      <button data-view="report">گزارش</button>
+      <button data-view="settings">ساختمان</button>
+    </nav>
+  </div>
+
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("service-worker.js");
+      });
+    }
+  </script>
+</body>
+</html>
