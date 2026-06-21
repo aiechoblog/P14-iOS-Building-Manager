@@ -54,7 +54,10 @@ function toEnglishDigits(value) {
 }
 
 function normalizeNumberText(value) {
-  return toEnglishDigits(value).replaceAll(",", "").replaceAll(" ", "").trim();
+  return toEnglishDigits(value)
+    .replaceAll(",", "")
+    .replaceAll(" ", "")
+    .trim();
 }
 
 function parseAmount(value) {
@@ -66,7 +69,23 @@ function parseAmount(value) {
 function isNumericText(value) {
   const normalized = normalizeNumberText(value);
   if (normalized === "" || normalized === "-") return false;
-  return Number.isInteger(Number.parseInt(normalized, 10)) && String(Number.parseInt(normalized, 10)) === normalized;
+  return /^-?\d+$/.test(normalized);
+}
+
+function formatInputNumber(value, allowNegative = false) {
+  let normalized = normalizeNumberText(value);
+  let isNegative = false;
+
+  if (normalized.startsWith("-")) {
+    isNegative = allowNegative;
+    normalized = normalized.slice(1);
+  }
+
+  normalized = normalized.replace(/\D/g, "");
+  if (normalized === "") return isNegative ? "-" : "";
+
+  const withCommas = Number.parseInt(normalized, 10).toLocaleString("en-US");
+  return (isNegative ? "-" : "") + withCommas;
 }
 
 function formatMoney(value) {
@@ -95,38 +114,48 @@ function createDefaultUnit(unitNumber, defaultCharge) {
   return {
     id: p14Id(),
     unitNumber,
-    floor: "",
-    area: "",
     ownerName: name,
     ownerPhone: "",
-    isRented: false,
+    hasTenant: false,
     tenantName: "",
     tenantPhone: "",
-    tenantEntryDate: "",
-    residentName: name,
-    residentPhone: "",
+    moveInDate: "",
     monthlyCharge: defaultCharge,
     notes: ""
   };
 }
 
+function sampleUnit(unitNumber, ownerName, ownerPhone, notes = "") {
+  return {
+    id: p14Id(),
+    unitNumber,
+    ownerName,
+    ownerPhone,
+    hasTenant: false,
+    tenantName: "",
+    tenantPhone: "",
+    moveInDate: "",
+    monthlyCharge: 1200000,
+    notes
+  };
+}
+
 function defaultData() {
   const buildingInfo = defaultBuildingInfo();
-  const units = [
-    { id: p14Id(), unitNumber: 1, floor: "۱", area: "۹۰", ownerName: "احمدی", ownerPhone: "09120000001", isRented: false, tenantName: "", tenantPhone: "", tenantEntryDate: "", residentName: "احمدی", residentPhone: "09120000001", monthlyCharge: 1200000, notes: "" },
-    { id: p14Id(), unitNumber: 2, floor: "۱", area: "۹۰", ownerName: "محمدی", ownerPhone: "09120000002", isRented: false, tenantName: "", tenantPhone: "", tenantEntryDate: "", residentName: "محمدی", residentPhone: "09120000002", monthlyCharge: 1200000, notes: "" },
-    { id: p14Id(), unitNumber: 3, floor: "۲", area: "۹۵", ownerName: "رضایی", ownerPhone: "09120000003", isRented: false, tenantName: "", tenantPhone: "", tenantEntryDate: "", residentName: "رضایی", residentPhone: "09120000003", monthlyCharge: 1200000, notes: "پرداخت ناقص در نمونه" },
-    { id: p14Id(), unitNumber: 4, floor: "۲", area: "۹۵", ownerName: "کاظمی", ownerPhone: "09120000004", isRented: false, tenantName: "", tenantPhone: "", tenantEntryDate: "", residentName: "کاظمی", residentPhone: "09120000004", monthlyCharge: 1200000, notes: "" },
-    { id: p14Id(), unitNumber: 5, floor: "۳", area: "۱۰۰", ownerName: "حسینی", ownerPhone: "09120000005", isRented: false, tenantName: "", tenantPhone: "", tenantEntryDate: "", residentName: "حسینی", residentPhone: "09120000005", monthlyCharge: 1200000, notes: "" },
-    { id: p14Id(), unitNumber: 6, floor: "۳", area: "۱۰۰", ownerName: "کریمی", ownerPhone: "09120000006", isRented: false, tenantName: "", tenantPhone: "", tenantEntryDate: "", residentName: "کریمی", residentPhone: "09120000006", monthlyCharge: 1200000, notes: "بدهکار در نمونه" },
-    { id: p14Id(), unitNumber: 7, floor: "۴", area: "۱۰۵", ownerName: "موسوی", ownerPhone: "09120000007", isRented: false, tenantName: "", tenantPhone: "", tenantEntryDate: "", residentName: "موسوی", residentPhone: "09120000007", monthlyCharge: 1200000, notes: "" },
-    { id: p14Id(), unitNumber: 8, floor: "۴", area: "۱۰۵", ownerName: "جعفری", ownerPhone: "09120000008", isRented: false, tenantName: "", tenantPhone: "", tenantEntryDate: "", residentName: "جعفری", residentPhone: "09120000008", monthlyCharge: 1200000, notes: "بدهکار در نمونه" },
-    { id: p14Id(), unitNumber: 9, floor: "۵", area: "۱۱۰", ownerName: "مرادی", ownerPhone: "09120000009", isRented: false, tenantName: "", tenantPhone: "", tenantEntryDate: "", residentName: "مرادی", residentPhone: "09120000009", monthlyCharge: 1200000, notes: "بدهکار در نمونه" }
-  ];
-
   return {
     buildingInfo,
-    units,
+    selectedMonth: "خرداد ۱۴۰۵",
+    units: [
+      sampleUnit(1, "احمدی", "09120000001"),
+      sampleUnit(2, "محمدی", "09120000002"),
+      sampleUnit(3, "رضایی", "09120000003", "پرداخت ناقص در نمونه"),
+      sampleUnit(4, "کاظمی", "09120000004"),
+      sampleUnit(5, "حسینی", "09120000005"),
+      sampleUnit(6, "کریمی", "09120000006", "بدهکار در نمونه"),
+      sampleUnit(7, "موسوی", "09120000007"),
+      sampleUnit(8, "جعفری", "09120000008", "بدهکار در نمونه"),
+      sampleUnit(9, "مرادی", "09120000009", "بدهکار در نمونه")
+    ],
     payments: [
       { id: p14Id(), unitNumber: 1, monthLabel: "خرداد ۱۴۰۵", paymentDate: "۱۴۰۵/۰۳/۰۵", amount: 1200000, notes: "پرداخت کامل" },
       { id: p14Id(), unitNumber: 2, monthLabel: "خرداد ۱۴۰۵", paymentDate: "۱۴۰۵/۰۳/۰۶", amount: 1200000, notes: "پرداخت کامل" },
@@ -150,24 +179,21 @@ function defaultData() {
 function migrateUnit(unit, defaultCharge) {
   const ownerName = unit.ownerName || "";
   const oldPhone = unit.phoneNumber || "";
-  const tenantName = unit.tenantName || "";
-  const isRented = typeof unit.isRented === "boolean" ? unit.isRented : (tenantName !== "" && tenantName !== ownerName);
-  const residentName = unit.residentName || (tenantName || ownerName);
-  const residentPhone = unit.residentPhone || oldPhone || unit.ownerPhone || "";
+  const oldTenantName = unit.tenantName || "";
+  const oldTenantPhone = unit.tenantPhone || "";
+  const hasTenant = typeof unit.hasTenant === "boolean"
+    ? unit.hasTenant
+    : Boolean(unit.isRented || (oldTenantName && oldTenantName !== ownerName));
 
   return {
     id: unit.id || p14Id(),
     unitNumber: Number(unit.unitNumber) || 1,
-    floor: unit.floor || "",
-    area: unit.area || "",
     ownerName,
     ownerPhone: unit.ownerPhone || oldPhone,
-    isRented,
-    tenantName,
-    tenantPhone: unit.tenantPhone || "",
-    tenantEntryDate: unit.tenantEntryDate || "",
-    residentName,
-    residentPhone,
+    hasTenant,
+    tenantName: hasTenant ? oldTenantName : "",
+    tenantPhone: hasTenant ? oldTenantPhone : "",
+    moveInDate: unit.moveInDate || unit.tenantEntryDate || "",
     monthlyCharge: Number(unit.monthlyCharge) || defaultCharge,
     notes: unit.notes || ""
   };
@@ -199,6 +225,7 @@ function migrateData(raw) {
 
   const migrated = {
     buildingInfo,
+    selectedMonth: data.selectedMonth || "خرداد ۱۴۰۵",
     units: Array.isArray(data.units) ? data.units.map((unit) => migrateUnit(unit, buildingInfo.defaultMonthlyCharge)) : fallback.units,
     payments: Array.isArray(data.payments) ? data.payments : [],
     expenses: Array.isArray(data.expenses) ? data.expenses : [],
@@ -250,5 +277,6 @@ window.P14DB = {
   toEnglishDigits,
   parseAmount,
   isNumericText,
+  formatInputNumber,
   formatMoney
 };
