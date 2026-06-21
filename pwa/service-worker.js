@@ -1,4 +1,4 @@
-const P14_CACHE_NAME = "p14-pwa-cache-v1";
+const P14_CACHE_NAME = "p14-pwa-cache-v2";
 const P14_ASSETS = [
   "./",
   "./index.html",
