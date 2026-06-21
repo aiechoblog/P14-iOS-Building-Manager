@@ -26,9 +26,8 @@ function activeUnits() {
   return appData.units.filter((unit) => Number(unit.unitNumber) <= count);
 }
 
-function displayResidentName(unit) {
-  if (unit.residentName) return unit.residentName;
-  if (unit.isRented && unit.tenantName) return unit.tenantName;
+function displayUnitName(unit) {
+  if (unit.hasTenant && unit.tenantName) return unit.tenantName;
   return unit.ownerName || "";
 }
 
@@ -110,6 +109,10 @@ function billTypeOptions(selected) {
   return P14DB.billTypes.map((type) => `<option value="${h(type)}" ${type === selected ? "selected" : ""}>${h(type)}</option>`).join("");
 }
 
+function formattedInputValue(value, allowNegative = false) {
+  return P14DB.formatInputNumber(String(value ?? ""), allowNegative);
+}
+
 function setView(view, params = {}) {
   currentView = view;
   editingUnitId = params.unitId || "";
@@ -152,6 +155,21 @@ function card(title, value) {
   return `<section class="card"><p class="label">${h(title)}</p><p class="value">${h(value)}</p></section>`;
 }
 
+function field(label, name, value = "", type = "text", extra = "") {
+  return `
+    <div class="field">
+      <label for="${h(name)}">${h(label)}</label>
+      <input id="${h(name)}" name="${h(name)}" type="${h(type)}" value="${h(value)}" ${extra}>
+    </div>
+  `;
+}
+
+function moneyField(label, name, value = "", allowNegative = false) {
+  const formatted = formattedInputValue(value, allowNegative);
+  const negativeAttr = allowNegative ? 'data-allow-negative="true"' : "";
+  return field(label, name, formatted, "text", `inputmode="numeric" data-money="true" ${negativeAttr}`);
+}
+
 function renderDashboard() {
   const month = appData.selectedMonth;
   appRoot.innerHTML = `
@@ -181,15 +199,6 @@ function renderDashboard() {
   `;
 }
 
-function field(label, name, value = "", type = "text", extra = "") {
-  return `
-    <div class="field">
-      <label for="${h(name)}">${h(label)}</label>
-      <input id="${h(name)}" name="${h(name)}" type="${h(type)}" value="${h(value)}" ${extra}>
-    </div>
-  `;
-}
-
 function renderSettings() {
   const b = appData.buildingInfo;
   appRoot.innerHTML = `
@@ -199,11 +208,11 @@ function renderSettings() {
         ${field("نام ساختمان", "buildingName", b.buildingName)}
         ${field("آدرس", "address", b.address)}
         ${field("تعداد واحدها", "numberOfUnits", P14DB.toPersianDigits(b.numberOfUnits), "text", 'inputmode="numeric"')}
-        ${field("شارژ پیش فرض ماهانه", "defaultMonthlyCharge", P14DB.toPersianDigits(b.defaultMonthlyCharge), "text", 'inputmode="numeric"')}
+        ${moneyField("شارژ پیش فرض ماهانه", "defaultMonthlyCharge", b.defaultMonthlyCharge)}
         ${field("نام مدیر ساختمان", "managerName", b.managerName)}
         ${field("تلفن مدیر ساختمان", "managerPhone", b.managerPhone)}
         ${field("سال مالی", "accountingYearLabel", b.accountingYearLabel)}
-        ${field("موجودی اول دوره", "openingFundBalance", P14DB.toPersianDigits(b.openingFundBalance), "text", 'inputmode="text"')}
+        ${moneyField("موجودی اول دوره", "openingFundBalance", b.openingFundBalance, true)}
         ${field("تاریخ موجودی اول دوره", "openingBalanceDate", b.openingBalanceDate)}
         ${field("توضیحات موجودی اول دوره", "openingBalanceNotes", b.openingBalanceNotes)}
         <div class="field full">
@@ -218,7 +227,6 @@ function renderSettings() {
       </form>
     </section>
   `;
-
   document.getElementById("settings-form").addEventListener("submit", saveSettings);
 }
 
@@ -267,13 +275,13 @@ function renderUnits() {
   appRoot.innerHTML = `
     <section class="panel">
       <h2>واحدها</h2>
-      <p class="muted">برای ویرایش، روی واحد بزنید. اگر تعداد واحدها در اطلاعات ساختمان بیشتر شود، واحدهای جدید خودکار ساخته می شوند.</p>
+      <p class="muted">برای ویرایش، روی واحد بزنید. اطلاعات ساکن جداگانه حذف شده و وضعیت مستاجر از همین فرم واحد مدیریت می شود.</p>
       <div class="list">
         ${activeUnits().map((unit) => `
           <button class="list-item" data-action="edit-unit" data-id="${h(unit.id)}">
-            <strong>واحد ${P14DB.toPersianDigits(unit.unitNumber)} - ${h(displayResidentName(unit))}</strong>
+            <strong>واحد ${P14DB.toPersianDigits(unit.unitNumber)} - ${h(displayUnitName(unit))}</strong>
             <span>مالک: ${h(unit.ownerName)} | شارژ: ${P14DB.formatMoney(unit.monthlyCharge)}</span>
-            <span class="muted">${unit.isRented ? "دارای مستاجر" : "مالک ساکن"} ${unit.notes ? "- " + h(unit.notes) : ""}</span>
+            <span class="muted">${unit.hasTenant ? "دارای مستاجر" : "بدون مستاجر"} ${unit.moveInDate ? "- تاریخ ورود: " + h(unit.moveInDate) : ""}</span>
           </button>
         `).join("")}
       </div>
@@ -287,27 +295,24 @@ function renderUnitEdit() {
     setView("units");
     return;
   }
+
   appRoot.innerHTML = `
     <section class="panel">
       <h2>ویرایش واحد</h2>
       <form id="unit-form" class="form-grid">
         ${field("شماره واحد", "unitNumber", P14DB.toPersianDigits(unit.unitNumber), "text", 'inputmode="numeric"')}
-        ${field("طبقه", "floor", unit.floor)}
-        ${field("متراژ", "area", unit.area)}
         ${field("نام مالک", "ownerName", unit.ownerName)}
         ${field("تلفن مالک", "ownerPhone", unit.ownerPhone, "tel")}
         <div class="field check-row full">
-          <input id="isRented" name="isRented" type="checkbox" ${unit.isRented ? "checked" : ""}>
-          <label for="isRented">آیا واحد مستاجر دارد؟</label>
+          <input id="hasTenant" name="hasTenant" type="checkbox" ${unit.hasTenant ? "checked" : ""}>
+          <label for="hasTenant">مستاجر دارد؟</label>
         </div>
-        <div id="tenant-fields" class="form-grid full ${unit.isRented ? "" : "hidden"}">
+        <div id="tenant-fields" class="form-grid full ${unit.hasTenant ? "" : "hidden"}">
           ${field("نام مستاجر", "tenantName", unit.tenantName)}
           ${field("تلفن مستاجر", "tenantPhone", unit.tenantPhone, "tel")}
-          ${field("تاریخ ورود مستاجر", "tenantEntryDate", unit.tenantEntryDate)}
         </div>
-        ${field("نام ساکن", "residentName", unit.residentName)}
-        ${field("تلفن ساکن", "residentPhone", unit.residentPhone, "tel")}
-        ${field("شارژ ماهانه", "monthlyCharge", P14DB.toPersianDigits(unit.monthlyCharge), "text", 'inputmode="numeric"')}
+        ${field("تاریخ ورود", "moveInDate", unit.moveInDate)}
+        ${moneyField("شارژ ماهانه", "monthlyCharge", unit.monthlyCharge)}
         <div class="field full">
           <label for="notes">توضیحات</label>
           <textarea id="notes" name="notes">${h(unit.notes)}</textarea>
@@ -320,7 +325,8 @@ function renderUnitEdit() {
       </form>
     </section>
   `;
-  document.getElementById("isRented").addEventListener("change", (event) => {
+
+  document.getElementById("hasTenant").addEventListener("change", (event) => {
     document.getElementById("tenant-fields").classList.toggle("hidden", !event.target.checked);
   });
   document.getElementById("unit-form").addEventListener("submit", saveUnit);
@@ -332,7 +338,7 @@ function saveUnit(event) {
   const unit = appData.units.find((item) => item.id === editingUnitId);
   const unitNumberText = form.get("unitNumber");
   const chargeText = form.get("monthlyCharge");
-  const isRented = form.get("isRented") === "on";
+  const hasTenant = form.get("hasTenant") === "on";
   const msg = document.getElementById("unit-message");
 
   if (!P14DB.isNumericText(unitNumberText) || P14DB.parseAmount(unitNumberText) < 1) {
@@ -345,25 +351,25 @@ function saveUnit(event) {
     msg.className = "danger full";
     return;
   }
-  if (isRented && (!form.get("tenantName") || !form.get("tenantPhone"))) {
-    msg.textContent = "برای واحد مستاجر، نام و تلفن مستاجر را وارد کنید.";
+  if (hasTenant && (!form.get("tenantName") || !form.get("tenantPhone"))) {
+    msg.textContent = "برای واحد دارای مستاجر، نام و تلفن مستاجر را وارد کنید.";
     msg.className = "danger full";
     return;
   }
 
   unit.unitNumber = P14DB.parseAmount(unitNumberText);
-  unit.floor = String(form.get("floor") || "");
-  unit.area = String(form.get("area") || "");
   unit.ownerName = String(form.get("ownerName") || "");
   unit.ownerPhone = String(form.get("ownerPhone") || "");
-  unit.isRented = isRented;
-  unit.tenantName = isRented ? String(form.get("tenantName") || "") : "";
-  unit.tenantPhone = isRented ? String(form.get("tenantPhone") || "") : "";
-  unit.tenantEntryDate = isRented ? String(form.get("tenantEntryDate") || "") : "";
-  unit.residentName = String(form.get("residentName") || (isRented ? unit.tenantName : unit.ownerName));
-  unit.residentPhone = String(form.get("residentPhone") || (isRented ? unit.tenantPhone : unit.ownerPhone));
+  unit.hasTenant = hasTenant;
+  unit.tenantName = hasTenant ? String(form.get("tenantName") || "") : "";
+  unit.tenantPhone = hasTenant ? String(form.get("tenantPhone") || "") : "";
+  unit.moveInDate = String(form.get("moveInDate") || "");
   unit.monthlyCharge = P14DB.parseAmount(chargeText);
   unit.notes = String(form.get("notes") || "");
+  delete unit.residentName;
+  delete unit.residentPhone;
+  delete unit.tenantEntryDate;
+  delete unit.isRented;
   saveAppData();
   setView("units");
 }
@@ -377,7 +383,7 @@ function renderPayments() {
         <div class="field">
           <label for="unitNumber">واحد</label>
           <select id="unitNumber" name="unitNumber">
-            ${activeUnits().map((unit) => `<option value="${unit.unitNumber}">واحد ${P14DB.toPersianDigits(unit.unitNumber)} - ${h(displayResidentName(unit))}</option>`).join("")}
+            ${activeUnits().map((unit) => `<option value="${unit.unitNumber}">واحد ${P14DB.toPersianDigits(unit.unitNumber)} - ${h(displayUnitName(unit))}</option>`).join("")}
           </select>
         </div>
         <div class="field">
@@ -385,7 +391,7 @@ function renderPayments() {
           <select id="monthLabel" name="monthLabel">${monthOptions(month)}</select>
         </div>
         ${field("تاریخ پرداخت", "paymentDate", "۱۴۰۵/۰۳/۰۱")}
-        ${field("مبلغ", "amount", "", "text", 'inputmode="numeric"')}
+        ${moneyField("مبلغ", "amount", "")}
         ${field("توضیحات", "notes", "شارژ ماهانه")}
         <div class="actions full"><button class="btn" type="submit">ثبت پرداخت</button></div>
         <p id="payment-message" class="muted full"></p>
@@ -428,7 +434,7 @@ function renderExpenses() {
         ${field("تاریخ", "dateText", "۱۴۰۵/۰۳/۰۱")}
         ${field("دسته بندی", "category", "نظافت")}
         ${field("شرح هزینه", "description", "")}
-        ${field("مبلغ", "amount", "", "text", 'inputmode="numeric"')}
+        ${moneyField("مبلغ", "amount", "")}
         ${field("توضیحات", "notes", "")}
         <div class="actions full"><button class="btn" type="submit">ثبت هزینه</button></div>
         <p id="expense-message" class="muted full"></p>
@@ -559,7 +565,7 @@ function renderBillPayment() {
           ${field("تاریخ صدور", "issueDateText", "")}
           ${field("مهلت پرداخت", "dueDateText", "")}
           ${field("تاریخ پرداخت", "paymentDateText", "")}
-          ${field("مبلغ", "amount", "", "text", 'inputmode="numeric"')}
+          ${moneyField("مبلغ", "amount", "")}
           ${field("شماره پیگیری پرداخت", "paymentTrackingNumber", "")}
           ${field("توضیحات", "notes", "")}
           <div class="actions full">
@@ -609,7 +615,7 @@ function renderDebtors() {
       <div class="list">
         ${rows.map((row) => `
           <div class="list-item">
-            <strong>واحد ${P14DB.toPersianDigits(row.unit.unitNumber)} - ${h(displayResidentName(row.unit))}</strong>
+            <strong>واحد ${P14DB.toPersianDigits(row.unit.unitNumber)} - ${h(displayUnitName(row.unit))}</strong>
             <span>پرداخت شده: ${P14DB.formatMoney(row.paid)}</span>
             <span class="danger">بدهی: ${P14DB.formatMoney(row.debt)}</span>
           </div>
@@ -643,7 +649,7 @@ function reportText(month) {
   lines.push("");
   lines.push("بدهکاران:");
   if (rows.length === 0) lines.push("همه واحدها تسویه هستند.");
-  rows.forEach((row) => lines.push("واحد " + P14DB.toPersianDigits(row.unit.unitNumber) + " - " + displayResidentName(row.unit) + ": " + P14DB.formatMoney(row.debt)));
+  rows.forEach((row) => lines.push("واحد " + P14DB.toPersianDigits(row.unit.unitNumber) + " - " + displayUnitName(row.unit) + ": " + P14DB.formatMoney(row.debt)));
   if (appData.buildingInfo.managerName || appData.buildingInfo.managerPhone) {
     lines.push("");
     lines.push("مدیر ساختمان: " + appData.buildingInfo.managerName + " " + P14DB.toPersianDigits(appData.buildingInfo.managerPhone));
@@ -668,7 +674,7 @@ function residentsMessage(month) {
     lines.push("همه واحدها برای این ماه تسویه هستند.");
   } else {
     lines.push("واحدهای دارای بدهی:");
-    rows.forEach((row) => lines.push("واحد " + P14DB.toPersianDigits(row.unit.unitNumber) + " - " + displayResidentName(row.unit) + ": " + P14DB.formatMoney(row.debt)));
+    rows.forEach((row) => lines.push("واحد " + P14DB.toPersianDigits(row.unit.unitNumber) + " - " + displayUnitName(row.unit) + ": " + P14DB.formatMoney(row.debt)));
   }
   lines.push("");
   lines.push("با تشکر از همراهی شما");
@@ -713,6 +719,13 @@ monthSelect.addEventListener("change", () => {
   appData.selectedMonth = monthSelect.value;
   saveAppData();
   render();
+});
+
+appRoot.addEventListener("input", (event) => {
+  const input = event.target.closest("input[data-money='true']");
+  if (!input) return;
+  const allowNegative = input.dataset.allowNegative === "true";
+  input.value = P14DB.formatInputNumber(input.value, allowNegative);
 });
 
 appRoot.addEventListener("click", async (event) => {
