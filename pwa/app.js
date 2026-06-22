@@ -2,6 +2,9 @@ let appData = P14DB.loadData();
 let currentView = "dashboard";
 let editingUnitId = "";
 let editingBillProfileId = "";
+let statementUnitNumber = "";
+let statementStartMonth = "";
+let statementEndMonth = "";
 
 const appRoot = document.getElementById("app");
 const titleEl = document.getElementById("app-title");
@@ -22,6 +25,11 @@ function saveAppData() {
 }
 
 function activeUnits() {
+  const count = Number(appData.buildingInfo.numberOfUnits) || 1;
+  return appData.units.filter((unit) => Number(unit.unitNumber) <= count && unit.isActive !== false);
+}
+
+function configuredUnits() {
   const count = Number(appData.buildingInfo.numberOfUnits) || 1;
   return appData.units.filter((unit) => Number(unit.unitNumber) <= count);
 }
@@ -51,6 +59,10 @@ function paidAmount(unitNumber, month) {
 
 function expectedCharge() {
   return activeUnits().reduce((total, unit) => total + Number(unit.monthlyCharge || 0), 0);
+}
+
+function activePeopleCount() {
+  return activeUnits().reduce((total, unit) => total + Number(unit.peopleCount || 0), 0);
 }
 
 function receivedPayments(month) {
@@ -109,6 +121,22 @@ function billTypeOptions(selected) {
   return P14DB.billTypes.map((type) => `<option value="${h(type)}" ${type === selected ? "selected" : ""}>${h(type)}</option>`).join("");
 }
 
+function unitOptions(selectedUnitNumber) {
+  return configuredUnits().map((unit) => {
+    const selected = Number(unit.unitNumber) === Number(selectedUnitNumber) ? "selected" : "";
+    return `<option value="${unit.unitNumber}" ${selected}>واحد ${P14DB.toPersianDigits(unit.unitNumber)} - ${h(displayUnitName(unit))}</option>`;
+  }).join("");
+}
+
+function chargeMethodOptions(selected) {
+  const methods = [
+    { value: "fixed", label: "ثابت برای هر واحد" },
+    { value: "people", label: "بر اساس تعداد نفرات" },
+    { value: "mixed", label: "ترکیبی / سفارشی" }
+  ];
+  return methods.map((method) => `<option value="${method.value}" ${method.value === selected ? "selected" : ""}>${method.label}</option>`).join("");
+}
+
 function formattedInputValue(value, allowNegative = false) {
   return P14DB.formatInputNumber(String(value ?? ""), allowNegative);
 }
@@ -146,6 +174,7 @@ function render() {
   if (currentView === "bill-edit") renderBillProfileEdit();
   if (currentView === "bill-payment") renderBillPayment();
   if (currentView === "debtors") renderDebtors();
+  if (currentView === "unit-statement") renderUnitStatement();
   if (currentView === "report") renderReport();
 
   appRoot.focus();
@@ -209,6 +238,10 @@ function renderSettings() {
         ${field("آدرس", "address", b.address)}
         ${field("تعداد واحدها", "numberOfUnits", P14DB.toPersianDigits(b.numberOfUnits), "text", 'inputmode="numeric"')}
         ${moneyField("شارژ پیش فرض ماهانه", "defaultMonthlyCharge", b.defaultMonthlyCharge)}
+        <div class="field">
+          <label for="chargeCalculationMethod">روش محاسبه شارژ</label>
+          <select id="chargeCalculationMethod" name="chargeCalculationMethod">${chargeMethodOptions(b.chargeCalculationMethod || "fixed")}</select>
+        </div>
         ${field("نام مدیر ساختمان", "managerName", b.managerName)}
         ${field("تلفن مدیر ساختمان", "managerPhone", b.managerPhone)}
         ${field("سال مالی", "accountingYearLabel", b.accountingYearLabel)}
@@ -259,6 +292,7 @@ function saveSettings(event) {
     address: String(form.get("address") || ""),
     numberOfUnits: P14DB.parseAmount(unitCountText),
     defaultMonthlyCharge: P14DB.parseAmount(defaultChargeText),
+    chargeCalculationMethod: String(form.get("chargeCalculationMethod") || "fixed"),
     managerName: String(form.get("managerName") || ""),
     managerPhone: String(form.get("managerPhone") || ""),
     notes: String(form.get("notes") || ""),
@@ -275,13 +309,14 @@ function renderUnits() {
   appRoot.innerHTML = `
     <section class="panel">
       <h2>واحدها</h2>
-      <p class="muted">برای ویرایش، روی واحد بزنید. اطلاعات ساکن جداگانه حذف شده و وضعیت مستاجر از همین فرم واحد مدیریت می شود.</p>
+      <p class="muted">برای ویرایش، روی واحد بزنید. واحدهای غیرفعال حذف نمی شوند، اما در محاسبه بدهکاران و شارژ مورد انتظار لحاظ نمی شوند.</p>
       <div class="list">
-        ${activeUnits().map((unit) => `
+        ${configuredUnits().map((unit) => `
           <button class="list-item" data-action="edit-unit" data-id="${h(unit.id)}">
             <strong>واحد ${P14DB.toPersianDigits(unit.unitNumber)} - ${h(displayUnitName(unit))}</strong>
             <span>مالک: ${h(unit.ownerName)} | شارژ: ${P14DB.formatMoney(unit.monthlyCharge)}</span>
-            <span class="muted">${unit.hasTenant ? "دارای مستاجر" : "بدون مستاجر"} ${unit.moveInDate ? "- تاریخ ورود: " + h(unit.moveInDate) : ""}</span>
+            <span class="muted">طبقه: ${h(unit.floor || "-")} | متراژ: ${h(unit.area || "-")} | نفرات: ${P14DB.toPersianDigits(unit.peopleCount ?? 1)}</span>
+            <span class="${unit.isActive === false ? "danger" : "muted"}">${unit.isActive === false ? "غیرفعال" : "فعال"} | ${unit.hasTenant ? "دارای مستاجر" : "بدون مستاجر"} ${unit.moveInDate ? "- تاریخ ورود: " + h(unit.moveInDate) : ""}</span>
           </button>
         `).join("")}
       </div>
@@ -300,9 +335,28 @@ function renderUnitEdit() {
     <section class="panel">
       <h2>ویرایش واحد</h2>
       <form id="unit-form" class="form-grid">
-        ${field("شماره واحد", "unitNumber", P14DB.toPersianDigits(unit.unitNumber), "text", 'inputmode="numeric"')}
+        <div class="panel full">
+          <h3>اطلاعات واحد</h3>
+          <div class="form-grid">
+            ${field("شماره واحد", "unitNumber", P14DB.toPersianDigits(unit.unitNumber), "text", 'inputmode="numeric"')}
+            ${field("طبقه", "floor", unit.floor || "")}
+            ${field("متراژ", "area", unit.area || "")}
+            <div class="field check-row full">
+              <input id="isActive" name="isActive" type="checkbox" ${unit.isActive === false ? "" : "checked"}>
+              <label for="isActive">فعال</label>
+            </div>
+          </div>
+        </div>
+        <div class="panel full">
+          <h3>مالک</h3>
+          <div class="form-grid">
         ${field("نام مالک", "ownerName", unit.ownerName)}
         ${field("تلفن مالک", "ownerPhone", unit.ownerPhone, "tel")}
+          </div>
+        </div>
+        <div class="panel full">
+          <h3>مستاجر</h3>
+          <div class="form-grid">
         <div class="field check-row full">
           <input id="hasTenant" name="hasTenant" type="checkbox" ${unit.hasTenant ? "checked" : ""}>
           <label for="hasTenant">مستاجر دارد؟</label>
@@ -310,12 +364,23 @@ function renderUnitEdit() {
         <div id="tenant-fields" class="form-grid full ${unit.hasTenant ? "" : "hidden"}">
           ${field("نام مستاجر", "tenantName", unit.tenantName)}
           ${field("تلفن مستاجر", "tenantPhone", unit.tenantPhone, "tel")}
+          ${field("تاریخ ورود مستاجر", "moveInDate", unit.moveInDate || "")}
         </div>
-        ${field("تاریخ ورود", "moveInDate", unit.moveInDate)}
+          </div>
+        </div>
+        <div class="panel full">
+          <h3>شارژ</h3>
+          <div class="form-grid">
+        ${field("تعداد نفرات", "peopleCount", P14DB.toPersianDigits(unit.peopleCount ?? 1), "text", 'inputmode="numeric"')}
         ${moneyField("شارژ ماهانه", "monthlyCharge", unit.monthlyCharge)}
+          </div>
+        </div>
+        <div class="panel full">
+          <h3>توضیحات</h3>
         <div class="field full">
           <label for="notes">توضیحات</label>
           <textarea id="notes" name="notes">${h(unit.notes)}</textarea>
+        </div>
         </div>
         <div class="actions full">
           <button class="btn" type="submit">ذخیره</button>
@@ -338,7 +403,9 @@ function saveUnit(event) {
   const unit = appData.units.find((item) => item.id === editingUnitId);
   const unitNumberText = form.get("unitNumber");
   const chargeText = form.get("monthlyCharge");
+  const peopleCountText = form.get("peopleCount");
   const hasTenant = form.get("hasTenant") === "on";
+  const isActive = form.get("isActive") === "on";
   const msg = document.getElementById("unit-message");
 
   if (!P14DB.isNumericText(unitNumberText) || P14DB.parseAmount(unitNumberText) < 1) {
@@ -351,6 +418,11 @@ function saveUnit(event) {
     msg.className = "danger full";
     return;
   }
+  if (!P14DB.isNumericText(peopleCountText) || P14DB.parseAmount(peopleCountText) < 0) {
+    msg.textContent = "تعداد نفرات باید عدد صفر یا بیشتر باشد.";
+    msg.className = "danger full";
+    return;
+  }
   if (hasTenant && (!form.get("tenantName") || !form.get("tenantPhone"))) {
     msg.textContent = "برای واحد دارای مستاجر، نام و تلفن مستاجر را وارد کنید.";
     msg.className = "danger full";
@@ -358,12 +430,16 @@ function saveUnit(event) {
   }
 
   unit.unitNumber = P14DB.parseAmount(unitNumberText);
+  unit.floor = String(form.get("floor") || "");
+  unit.area = String(form.get("area") || "");
   unit.ownerName = String(form.get("ownerName") || "");
   unit.ownerPhone = String(form.get("ownerPhone") || "");
   unit.hasTenant = hasTenant;
   unit.tenantName = hasTenant ? String(form.get("tenantName") || "") : "";
   unit.tenantPhone = hasTenant ? String(form.get("tenantPhone") || "") : "";
   unit.moveInDate = String(form.get("moveInDate") || "");
+  unit.peopleCount = P14DB.parseAmount(peopleCountText);
+  unit.isActive = isActive;
   unit.monthlyCharge = P14DB.parseAmount(chargeText);
   unit.notes = String(form.get("notes") || "");
   delete unit.residentName;
@@ -625,6 +701,119 @@ function renderDebtors() {
   `;
 }
 
+function monthsInRange(startMonth, endMonth) {
+  const startIndex = P14DB.months.indexOf(startMonth);
+  const endIndex = P14DB.months.indexOf(endMonth);
+  if (startIndex === -1 || endIndex === -1) return [];
+
+  const from = Math.min(startIndex, endIndex);
+  const to = Math.max(startIndex, endIndex);
+  return P14DB.months.slice(from, to + 1);
+}
+
+function unitStatementText(unitNumber, startMonth, endMonth) {
+  const unit = appData.units.find((item) => Number(item.unitNumber) === Number(unitNumber));
+  if (!unit) return "واحد انتخاب شده پیدا نشد.";
+
+  const months = monthsInRange(startMonth, endMonth);
+  const expectedPerMonth = Number(unit.monthlyCharge || 0);
+  let totalExpected = 0;
+  let totalPaid = 0;
+
+  const lines = [];
+  lines.push("سلام و احترام");
+  lines.push("");
+  lines.push(`گزارش حساب واحد ${P14DB.toPersianDigits(unit.unitNumber)} از ${startMonth} تا ${endMonth}:`);
+  lines.push("");
+  lines.push(`نام مخاطب: ${displayUnitName(unit)}`);
+  if (unit.isActive === false) {
+    lines.push("هشدار: این واحد در وضعیت غیرفعال ثبت شده است.");
+  }
+  lines.push("");
+  lines.push("شارژهای مورد انتظار:");
+
+  months.forEach((month) => {
+    totalExpected += expectedPerMonth;
+    lines.push(`* ${month}: ${P14DB.formatMoney(expectedPerMonth)}`);
+  });
+
+  lines.push("");
+  lines.push("وضعیت پرداخت:");
+
+  months.forEach((month) => {
+    const paid = paidAmount(unit.unitNumber, month);
+    totalPaid += paid;
+    const remaining = Math.max(expectedPerMonth - paid, 0);
+
+    if (paid >= expectedPerMonth) {
+      lines.push(`* ${month}: پرداخت شد (${P14DB.formatMoney(paid)})`);
+    } else if (paid <= 0) {
+      lines.push(`* ${month}: پرداخت نشده - مانده ${P14DB.formatMoney(expectedPerMonth)}`);
+    } else {
+      lines.push(`* ${month}: پرداخت ناقص - پرداختی ${P14DB.formatMoney(paid)} - مانده ${P14DB.formatMoney(remaining)}`);
+    }
+  });
+
+  const balance = Math.max(totalExpected - totalPaid, 0);
+  lines.push("");
+  lines.push(`جمع شارژ دوره: ${P14DB.formatMoney(totalExpected)}`);
+  lines.push(`جمع پرداختی: ${P14DB.formatMoney(totalPaid)}`);
+  lines.push(`مانده بدهی: ${P14DB.formatMoney(balance)}`);
+  lines.push("");
+  lines.push("در صورت واریز یا وجود مغایرت لطفا اطلاع فرمایید.");
+  lines.push("");
+  lines.push("با تشکر");
+  lines.push("مدیریت ساختمان");
+  return lines.join("\n");
+}
+
+function renderUnitStatement() {
+  const firstUnit = configuredUnits()[0];
+  const selectedUnit = statementUnitNumber || (firstUnit ? firstUnit.unitNumber : "");
+  const startMonth = statementStartMonth || P14DB.months[0];
+  const endMonth = statementEndMonth || appData.selectedMonth || P14DB.months[0];
+  const text = selectedUnit ? unitStatementText(selectedUnit, startMonth, endMonth) : "ابتدا یک واحد ثبت کنید.";
+
+  appRoot.innerHTML = `
+    <section class="panel">
+      <h2>گزارش واحد</h2>
+      <form id="unit-statement-form" class="form-grid">
+        <div class="field">
+          <label for="statementUnitNumber">واحد</label>
+          <select id="statementUnitNumber" name="statementUnitNumber">${unitOptions(selectedUnit)}</select>
+        </div>
+        <div class="field">
+          <label for="statementStartMonth">از ماه</label>
+          <select id="statementStartMonth" name="statementStartMonth">${monthOptions(startMonth)}</select>
+        </div>
+        <div class="field">
+          <label for="statementEndMonth">تا ماه</label>
+          <select id="statementEndMonth" name="statementEndMonth">${monthOptions(endMonth)}</select>
+        </div>
+        <div class="actions full">
+          <button class="btn" type="submit">ساخت گزارش واحد</button>
+        </div>
+      </form>
+    </section>
+    <section class="panel">
+      <textarea id="unit-statement-text" class="report-box" readonly>${h(text)}</textarea>
+      <div class="actions">
+        <button class="btn" data-action="copy-unit-statement">کپی پیام واحد</button>
+      </div>
+      <p id="unit-statement-message" class="muted"></p>
+    </section>
+  `;
+
+  document.getElementById("unit-statement-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    statementUnitNumber = String(form.get("statementUnitNumber") || "");
+    statementStartMonth = String(form.get("statementStartMonth") || P14DB.months[0]);
+    statementEndMonth = String(form.get("statementEndMonth") || appData.selectedMonth);
+    renderUnitStatement();
+  });
+}
+
 function reportText(month) {
   const rows = debtorRows(month);
   const bills = monthBillPayments(month);
@@ -635,6 +824,7 @@ function reportText(month) {
   lines.push("");
   lines.push("خلاصه مالی");
   lines.push("تعداد واحدها: " + P14DB.toPersianDigits(appData.buildingInfo.numberOfUnits));
+  lines.push("تعداد نفرات واحدهای فعال: " + P14DB.toPersianDigits(activePeopleCount()));
   lines.push("سال مالی: " + appData.buildingInfo.accountingYearLabel);
   lines.push("موجودی اول دوره: " + P14DB.formatMoney(appData.buildingInfo.openingFundBalance));
   lines.push("دریافتی شارژ: " + P14DB.formatMoney(receivedPayments(month)));
@@ -744,6 +934,11 @@ appRoot.addEventListener("click", async (event) => {
   if (action === "copy-report") {
     await navigator.clipboard.writeText(reportText(appData.selectedMonth));
     document.getElementById("report-message").textContent = "گزارش کپی شد.";
+  }
+  if (action === "copy-unit-statement") {
+    const textArea = document.getElementById("unit-statement-text");
+    await navigator.clipboard.writeText(textArea ? textArea.value : "");
+    document.getElementById("unit-statement-message").textContent = "پیام واحد کپی شد.";
   }
   if (action === "reset-data") {
     if (confirm("همه داده های محلی حذف و داده نمونه ساخته شود؟")) {
