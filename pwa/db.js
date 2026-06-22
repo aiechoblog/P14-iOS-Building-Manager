@@ -56,6 +56,8 @@ function toEnglishDigits(value) {
 function normalizeNumberText(value) {
   return toEnglishDigits(value)
     .replaceAll(",", "")
+    .replaceAll("٬", "")
+    .replaceAll("،", "")
     .replaceAll(" ", "")
     .trim();
 }
@@ -102,6 +104,7 @@ function defaultBuildingInfo() {
     managerName: "",
     managerPhone: "",
     notes: "",
+    chargeCalculationMethod: "fixed",
     accountingYearLabel: "۱۴۰۵",
     openingFundBalance: 0,
     openingBalanceDate: "۱۴۰۵/۰۱/۰۱",
@@ -114,27 +117,35 @@ function createDefaultUnit(unitNumber, defaultCharge) {
   return {
     id: p14Id(),
     unitNumber,
+    floor: "",
+    area: "",
     ownerName: name,
     ownerPhone: "",
     hasTenant: false,
     tenantName: "",
     tenantPhone: "",
     moveInDate: "",
+    peopleCount: 1,
+    isActive: true,
     monthlyCharge: defaultCharge,
     notes: ""
   };
 }
 
-function sampleUnit(unitNumber, ownerName, ownerPhone, notes = "") {
+function sampleUnit(unitNumber, floor, area, ownerName, ownerPhone, notes = "") {
   return {
     id: p14Id(),
     unitNumber,
+    floor,
+    area,
     ownerName,
     ownerPhone,
     hasTenant: false,
     tenantName: "",
     tenantPhone: "",
     moveInDate: "",
+    peopleCount: 1,
+    isActive: true,
     monthlyCharge: 1200000,
     notes
   };
@@ -146,15 +157,15 @@ function defaultData() {
     buildingInfo,
     selectedMonth: "خرداد ۱۴۰۵",
     units: [
-      sampleUnit(1, "احمدی", "09120000001"),
-      sampleUnit(2, "محمدی", "09120000002"),
-      sampleUnit(3, "رضایی", "09120000003", "پرداخت ناقص در نمونه"),
-      sampleUnit(4, "کاظمی", "09120000004"),
-      sampleUnit(5, "حسینی", "09120000005"),
-      sampleUnit(6, "کریمی", "09120000006", "بدهکار در نمونه"),
-      sampleUnit(7, "موسوی", "09120000007"),
-      sampleUnit(8, "جعفری", "09120000008", "بدهکار در نمونه"),
-      sampleUnit(9, "مرادی", "09120000009", "بدهکار در نمونه")
+      sampleUnit(1, "۱", "۹۰", "احمدی", "09120000001"),
+      sampleUnit(2, "۱", "۹۰", "محمدی", "09120000002"),
+      sampleUnit(3, "۲", "۹۵", "رضایی", "09120000003", "پرداخت ناقص در نمونه"),
+      sampleUnit(4, "۲", "۹۵", "کاظمی", "09120000004"),
+      sampleUnit(5, "۳", "۱۰۰", "حسینی", "09120000005"),
+      sampleUnit(6, "۳", "۱۰۰", "کریمی", "09120000006", "بدهکار در نمونه"),
+      sampleUnit(7, "۴", "۱۰۵", "موسوی", "09120000007"),
+      sampleUnit(8, "۴", "۱۰۵", "جعفری", "09120000008", "بدهکار در نمونه"),
+      sampleUnit(9, "۵", "۱۱۰", "مرادی", "09120000009", "بدهکار در نمونه")
     ],
     payments: [
       { id: p14Id(), unitNumber: 1, monthLabel: "خرداد ۱۴۰۵", paymentDate: "۱۴۰۵/۰۳/۰۵", amount: 1200000, notes: "پرداخت کامل" },
@@ -181,6 +192,7 @@ function migrateUnit(unit, defaultCharge) {
   const oldPhone = unit.phoneNumber || "";
   const oldTenantName = unit.tenantName || "";
   const oldTenantPhone = unit.tenantPhone || "";
+  const rawPeopleCount = Number(unit.peopleCount);
   const hasTenant = typeof unit.hasTenant === "boolean"
     ? unit.hasTenant
     : Boolean(unit.isRented || (oldTenantName && oldTenantName !== ownerName));
@@ -188,12 +200,16 @@ function migrateUnit(unit, defaultCharge) {
   return {
     id: unit.id || p14Id(),
     unitNumber: Number(unit.unitNumber) || 1,
+    floor: unit.floor || "",
+    area: unit.area || "",
     ownerName,
     ownerPhone: unit.ownerPhone || oldPhone,
     hasTenant,
     tenantName: hasTenant ? oldTenantName : "",
     tenantPhone: hasTenant ? oldTenantPhone : "",
     moveInDate: unit.moveInDate || unit.tenantEntryDate || "",
+    peopleCount: Number.isFinite(rawPeopleCount) ? Math.max(rawPeopleCount, 0) : 1,
+    isActive: typeof unit.isActive === "boolean" ? unit.isActive : true,
     monthlyCharge: Number(unit.monthlyCharge) || defaultCharge,
     notes: unit.notes || ""
   };
