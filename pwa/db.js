@@ -1,4 +1,6 @@
-const P14_STORAGE_KEY = "p14_pwa_data_v1";
+const P14_STORAGE_KEY = "P14_APP_DATA_V1";
+const P14_OLD_STORAGE_KEYS = ["p14_pwa_data_v1"];
+const P14_APP_DATA_VERSION = 1;
 
 const P14_MONTHS = [
   "فروردین ۱۴۰۵",
@@ -16,6 +18,15 @@ const P14_MONTHS = [
 ];
 
 const P14_BILL_TYPES = ["برق", "آب", "گاز", "تلفن", "اینترنت", "آسانسور", "عوارض", "سایر"];
+
+const P14_ALLOCATION_METHODS = [
+  { value: "equal", label: "مساوی بین واحدهای فعال" },
+  { value: "area", label: "بر اساس متراژ" },
+  { value: "people", label: "بر اساس تعداد نفرات" },
+  { value: "manual", label: "دستی / سفارشی" }
+];
+
+let lastLoadWarning = "";
 
 function p14Id() {
   if (window.crypto && window.crypto.randomUUID) {
@@ -39,7 +50,7 @@ function toPersianDigits(value) {
 }
 
 function toEnglishDigits(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("۰", "0")
     .replaceAll("۱", "1")
     .replaceAll("۲", "2")
@@ -63,9 +74,15 @@ function normalizeNumberText(value) {
 }
 
 function parseAmount(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
   const normalized = normalizeNumberText(value);
   if (normalized === "" || normalized === "-") return NaN;
   return Number.parseInt(normalized, 10);
+}
+
+function parseSafeNumber(value, fallback = 0) {
+  const parsed = parseAmount(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function isNumericText(value) {
@@ -91,8 +108,20 @@ function formatInputNumber(value, allowNegative = false) {
 }
 
 function formatMoney(value) {
-  const numberValue = Number.isFinite(value) ? value : 0;
+  const numberValue = Number.isFinite(Number(value)) ? Number(value) : 0;
   return toPersianDigits(numberValue.toLocaleString("en-US")) + " تومان";
+}
+
+function allocationLabel(value) {
+  const found = P14_ALLOCATION_METHODS.find((method) => method.value === value);
+  return found ? found.label : P14_ALLOCATION_METHODS[0].label;
+}
+
+function defaultAllocationForBillType(billType) {
+  if (billType === "آب") return "people";
+  if (billType === "گاز") return "area";
+  if (billType === "نظافت" || billType === "آسانسور") return "equal";
+  return "equal";
 }
 
 function defaultBuildingInfo() {
@@ -113,18 +142,17 @@ function defaultBuildingInfo() {
 }
 
 function createDefaultUnit(unitNumber, defaultCharge) {
-  const name = "مالک واحد " + toPersianDigits(unitNumber);
   return {
     id: p14Id(),
     unitNumber,
     floor: "",
-    area: "",
-    ownerName: name,
+    area: 0,
+    ownerName: "",
     ownerPhone: "",
     hasTenant: false,
     tenantName: "",
     tenantPhone: "",
-    moveInDate: "",
+    tenantMoveInDate: "",
     peopleCount: 1,
     isActive: true,
     monthlyCharge: defaultCharge,
@@ -132,91 +160,134 @@ function createDefaultUnit(unitNumber, defaultCharge) {
   };
 }
 
-function sampleUnit(unitNumber, floor, area, ownerName, ownerPhone, notes = "") {
-  return {
-    id: p14Id(),
-    unitNumber,
-    floor,
-    area,
-    ownerName,
-    ownerPhone,
-    hasTenant: false,
-    tenantName: "",
-    tenantPhone: "",
-    moveInDate: "",
-    peopleCount: 1,
-    isActive: true,
-    monthlyCharge: 1200000,
-    notes
-  };
-}
-
-function defaultData() {
+function emptyData() {
   const buildingInfo = defaultBuildingInfo();
-  return {
+  const data = {
+    appDataVersion: P14_APP_DATA_VERSION,
     buildingInfo,
     selectedMonth: "خرداد ۱۴۰۵",
-    units: [
-      sampleUnit(1, "۱", "۹۰", "احمدی", "09120000001"),
-      sampleUnit(2, "۱", "۹۰", "محمدی", "09120000002"),
-      sampleUnit(3, "۲", "۹۵", "رضایی", "09120000003", "پرداخت ناقص در نمونه"),
-      sampleUnit(4, "۲", "۹۵", "کاظمی", "09120000004"),
-      sampleUnit(5, "۳", "۱۰۰", "حسینی", "09120000005"),
-      sampleUnit(6, "۳", "۱۰۰", "کریمی", "09120000006", "بدهکار در نمونه"),
-      sampleUnit(7, "۴", "۱۰۵", "موسوی", "09120000007"),
-      sampleUnit(8, "۴", "۱۰۵", "جعفری", "09120000008", "بدهکار در نمونه"),
-      sampleUnit(9, "۵", "۱۱۰", "مرادی", "09120000009", "بدهکار در نمونه")
-    ],
-    payments: [
-      { id: p14Id(), unitNumber: 1, monthLabel: "خرداد ۱۴۰۵", paymentDate: "۱۴۰۵/۰۳/۰۵", amount: 1200000, notes: "پرداخت کامل" },
-      { id: p14Id(), unitNumber: 2, monthLabel: "خرداد ۱۴۰۵", paymentDate: "۱۴۰۵/۰۳/۰۶", amount: 1200000, notes: "پرداخت کامل" },
-      { id: p14Id(), unitNumber: 3, monthLabel: "خرداد ۱۴۰۵", paymentDate: "۱۴۰۵/۰۳/۰۷", amount: 600000, notes: "پرداخت نصف شارژ" },
-      { id: p14Id(), unitNumber: 4, monthLabel: "خرداد ۱۴۰۵", paymentDate: "۱۴۰۵/۰۳/۰۸", amount: 1200000, notes: "پرداخت کامل" },
-      { id: p14Id(), unitNumber: 5, monthLabel: "خرداد ۱۴۰۵", paymentDate: "۱۴۰۵/۰۳/۰۹", amount: 1200000, notes: "پرداخت کامل" },
-      { id: p14Id(), unitNumber: 7, monthLabel: "خرداد ۱۴۰۵", paymentDate: "۱۴۰۵/۰۳/۱۰", amount: 1200000, notes: "پرداخت کامل" }
-    ],
-    expenses: [
-      { id: p14Id(), monthLabel: "خرداد ۱۴۰۵", dateText: "۱۴۰۵/۰۳/۰۳", category: "نظافت", description: "حقوق نظافتچی", amount: 1500000, notes: "" }
-    ],
-    billProfiles: [
-      { id: p14Id(), billType: "برق", title: "برق مشاعات", providerName: "شرکت برق", meterNumber: "", subscriptionNumber: "", billId: "", paymentId: "", defaultCategory: "قبض", notes: "", isActive: true },
-      { id: p14Id(), billType: "آب", title: "آب ساختمان", providerName: "شرکت آب", meterNumber: "", subscriptionNumber: "", billId: "", paymentId: "", defaultCategory: "قبض", notes: "", isActive: true },
-      { id: p14Id(), billType: "آسانسور", title: "سرویس آسانسور", providerName: "", meterNumber: "", subscriptionNumber: "", billId: "", paymentId: "", defaultCategory: "قبض", notes: "", isActive: true }
-    ],
-    billPayments: []
+    units: [],
+    payments: [],
+    expenses: [],
+    billProfiles: [],
+    billPayments: [],
+    reports: []
   };
+  return ensureUnits(data);
+}
+
+function normalizeBoolean(value, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.toLowerCase().trim();
+    if (["true", "1", "yes", "y", "بله", "دارد", "فعال"].includes(normalized)) return true;
+    if (["false", "0", "no", "n", "خیر", "ندارد", "غیرفعال"].includes(normalized)) return false;
+  }
+  if (typeof value === "number") return value !== 0;
+  return fallback;
+}
+
+function migrateBuildingInfo(data) {
+  const oldBuilding = data.building || {};
+  const buildingInfo = { ...defaultBuildingInfo(), ...oldBuilding, ...(data.buildingInfo || {}) };
+  buildingInfo.numberOfUnits = Math.max(parseSafeNumber(buildingInfo.numberOfUnits, 1), 1);
+  buildingInfo.defaultMonthlyCharge = Math.max(parseSafeNumber(buildingInfo.defaultMonthlyCharge, 0), 0);
+  buildingInfo.openingFundBalance = parseSafeNumber(buildingInfo.openingFundBalance, 0);
+  return buildingInfo;
 }
 
 function migrateUnit(unit, defaultCharge) {
-  const ownerName = unit.ownerName || "";
-  const oldPhone = unit.phoneNumber || "";
   const oldTenantName = unit.tenantName || "";
   const oldTenantPhone = unit.tenantPhone || "";
-  const rawPeopleCount = Number(unit.peopleCount);
+  const inferredTenant = Boolean(oldTenantName || oldTenantPhone || unit.tenantMoveInDate || unit.moveInDate || unit.tenantEntryDate);
   const hasTenant = typeof unit.hasTenant === "boolean"
     ? unit.hasTenant
-    : Boolean(unit.isRented || (oldTenantName && oldTenantName !== ownerName));
+    : normalizeBoolean(unit.isRented, inferredTenant);
 
-  return {
-    id: unit.id || p14Id(),
-    unitNumber: Number(unit.unitNumber) || 1,
-    floor: unit.floor || "",
-    area: unit.area || "",
-    ownerName,
-    ownerPhone: unit.ownerPhone || oldPhone,
-    hasTenant,
-    tenantName: hasTenant ? oldTenantName : "",
-    tenantPhone: hasTenant ? oldTenantPhone : "",
-    moveInDate: unit.moveInDate || unit.tenantEntryDate || "",
-    peopleCount: Number.isFinite(rawPeopleCount) ? Math.max(rawPeopleCount, 0) : 1,
-    isActive: typeof unit.isActive === "boolean" ? unit.isActive : true,
-    monthlyCharge: Number(unit.monthlyCharge) || defaultCharge,
-    notes: unit.notes || ""
-  };
+  const next = { ...unit };
+  next.id = unit.id || p14Id();
+  next.unitNumber = Math.max(parseSafeNumber(unit.unitNumber, 1), 1);
+  next.floor = unit.floor || "";
+  next.area = Math.max(parseSafeNumber(unit.area, 0), 0);
+  next.ownerName = unit.ownerName || "";
+  next.ownerPhone = unit.ownerPhone || unit.phoneNumber || "";
+  next.hasTenant = hasTenant;
+  next.tenantName = hasTenant ? oldTenantName : "";
+  next.tenantPhone = hasTenant ? oldTenantPhone : "";
+  next.tenantMoveInDate = unit.tenantMoveInDate || unit.moveInDate || unit.tenantEntryDate || "";
+  next.peopleCount = Math.max(parseSafeNumber(unit.peopleCount, 1), 0);
+  next.isActive = typeof unit.isActive === "boolean" ? unit.isActive : true;
+  next.monthlyCharge = Math.max(parseSafeNumber(unit.monthlyCharge, defaultCharge || 0), 0);
+  next.notes = unit.notes || "";
+  return next;
+}
+
+function migratePayment(payment) {
+  const next = { ...payment };
+  next.id = payment.id || p14Id();
+  next.unitNumber = parseSafeNumber(payment.unitNumber, 1);
+  next.monthLabel = payment.monthLabel || "خرداد ۱۴۰۵";
+  next.paymentDate = payment.paymentDate || payment.paymentDateText || "";
+  next.amount = Math.max(parseSafeNumber(payment.amount, 0), 0);
+  next.notes = payment.notes || "";
+  return next;
+}
+
+function normalizeAllocationMethod(value) {
+  const allowed = P14_ALLOCATION_METHODS.map((method) => method.value);
+  return allowed.includes(value) ? value : "equal";
+}
+
+function migrateExpense(expense) {
+  const next = { ...expense };
+  next.id = expense.id || p14Id();
+  next.monthLabel = expense.monthLabel || "خرداد ۱۴۰۵";
+  next.dateText = expense.dateText || "";
+  next.category = expense.category || "";
+  next.description = expense.description || "";
+  next.amount = Math.max(parseSafeNumber(expense.amount, 0), 0);
+  next.allocationMethod = normalizeAllocationMethod(expense.allocationMethod || "equal");
+  next.notes = expense.notes || "";
+  return next;
+}
+
+function migrateBillProfile(profile) {
+  const billType = profile.billType || "سایر";
+  const next = { ...profile };
+  next.id = profile.id || p14Id();
+  next.billType = billType;
+  next.title = profile.title || "";
+  next.providerName = profile.providerName || "";
+  next.meterNumber = profile.meterNumber || "";
+  next.subscriptionNumber = profile.subscriptionNumber || "";
+  next.billId = profile.billId || "";
+  next.paymentId = profile.paymentId || "";
+  next.defaultCategory = profile.defaultCategory || "قبض";
+  next.defaultAllocationMethod = normalizeAllocationMethod(profile.defaultAllocationMethod || defaultAllocationForBillType(billType));
+  next.notes = profile.notes || "";
+  next.isActive = typeof profile.isActive === "boolean" ? profile.isActive : true;
+  return next;
+}
+
+function migrateBillPayment(payment) {
+  const next = { ...payment };
+  next.id = payment.id || p14Id();
+  next.billProfileId = payment.billProfileId || "";
+  next.monthLabel = payment.monthLabel || "خرداد ۱۴۰۵";
+  next.billPeriod = payment.billPeriod || "";
+  next.issueDateText = payment.issueDateText || "";
+  next.dueDateText = payment.dueDateText || "";
+  next.paymentDateText = payment.paymentDateText || "";
+  next.amount = Math.max(parseSafeNumber(payment.amount, 0), 0);
+  next.allocationMethod = normalizeAllocationMethod(payment.allocationMethod || "equal");
+  next.paymentTrackingNumber = payment.paymentTrackingNumber || "";
+  next.notes = payment.notes || "";
+  return next;
 }
 
 function ensureUnits(data) {
-  const count = Math.max(Number(data.buildingInfo.numberOfUnits) || 1, 1);
+  if (!Array.isArray(data.units)) data.units = [];
+  const count = Math.max(parseSafeNumber(data.buildingInfo.numberOfUnits, 1), 1);
   data.buildingInfo.numberOfUnits = count;
 
   for (let number = 1; number <= count; number += 1) {
@@ -231,68 +302,129 @@ function ensureUnits(data) {
 }
 
 function migrateData(raw) {
-  const fallback = defaultData();
-  const data = raw && typeof raw === "object" ? raw : fallback;
-  const oldBuilding = data.building || {};
-  const buildingInfo = { ...defaultBuildingInfo(), ...oldBuilding, ...(data.buildingInfo || {}) };
-  buildingInfo.numberOfUnits = Math.max(Number(buildingInfo.numberOfUnits) || 1, 1);
-  buildingInfo.defaultMonthlyCharge = Number(buildingInfo.defaultMonthlyCharge) || 0;
-  buildingInfo.openingFundBalance = Number(buildingInfo.openingFundBalance) || 0;
+  const source = raw && typeof raw === "object" ? raw : {};
+  const buildingInfo = migrateBuildingInfo(source);
 
   const migrated = {
+    ...source,
+    appDataVersion: P14_APP_DATA_VERSION,
     buildingInfo,
-    selectedMonth: data.selectedMonth || "خرداد ۱۴۰۵",
-    units: Array.isArray(data.units) ? data.units.map((unit) => migrateUnit(unit, buildingInfo.defaultMonthlyCharge)) : fallback.units,
-    payments: Array.isArray(data.payments) ? data.payments : [],
-    expenses: Array.isArray(data.expenses) ? data.expenses : [],
-    billProfiles: Array.isArray(data.billProfiles) ? data.billProfiles : [],
-    billPayments: Array.isArray(data.billPayments) ? data.billPayments : []
+    selectedMonth: source.selectedMonth || "خرداد ۱۴۰۵",
+    units: Array.isArray(source.units) ? source.units.map((unit) => migrateUnit(unit, buildingInfo.defaultMonthlyCharge)) : [],
+    payments: Array.isArray(source.payments) ? source.payments.map(migratePayment) : [],
+    expenses: Array.isArray(source.expenses) ? source.expenses.map(migrateExpense) : [],
+    billProfiles: Array.isArray(source.billProfiles) ? source.billProfiles.map(migrateBillProfile) : [],
+    billPayments: Array.isArray(source.billPayments) ? source.billPayments.map(migrateBillPayment) : [],
+    reports: Array.isArray(source.reports) ? source.reports : []
   };
 
   return ensureUnits(migrated);
 }
 
-function loadData() {
-  const stored = localStorage.getItem(P14_STORAGE_KEY);
-  if (!stored) {
-    const data = defaultData();
-    saveData(data);
-    return data;
-  }
-
+function readStoredJson(key) {
+  const text = localStorage.getItem(key);
+  if (!text) return { exists: false, data: null, error: null };
   try {
-    const data = migrateData(JSON.parse(stored));
-    saveData(data);
-    return data;
+    return { exists: true, data: JSON.parse(text), error: null };
   } catch (error) {
-    const data = defaultData();
-    saveData(data);
-    return data;
+    return { exists: true, data: null, error };
   }
 }
 
-function saveData(data) {
-  localStorage.setItem(P14_STORAGE_KEY, JSON.stringify(data));
+function preserveCorruptData(key) {
+  const text = localStorage.getItem(key);
+  if (!text) return;
+  const backupKey = key + "_CORRUPT_BACKUP_" + new Date().toISOString();
+  localStorage.setItem(backupKey, text);
 }
 
-function resetData() {
-  const data = defaultData();
+function loadData() {
+  lastLoadWarning = "";
+  const current = readStoredJson(P14_STORAGE_KEY);
+
+  if (current.exists && current.data) {
+    const data = migrateData(current.data);
+    saveData(data);
+    return data;
+  }
+
+  if (current.exists && current.error) {
+    preserveCorruptData(P14_STORAGE_KEY);
+    lastLoadWarning = "داده ذخیره شده قابل خواندن نبود. یک نسخه پشتیبان از متن خراب نگه داشته شد.";
+    return emptyData();
+  }
+
+  for (const oldKey of P14_OLD_STORAGE_KEYS) {
+    const oldStored = readStoredJson(oldKey);
+    if (oldStored.exists && oldStored.data) {
+      const data = migrateData(oldStored.data);
+      saveData(data);
+      return data;
+    }
+    if (oldStored.exists && oldStored.error) {
+      preserveCorruptData(oldKey);
+      lastLoadWarning = "داده قدیمی قابل خواندن نبود. یک نسخه پشتیبان از متن خراب نگه داشته شد.";
+    }
+  }
+
+  const data = emptyData();
   saveData(data);
   return data;
 }
 
+function saveData(data) {
+  const migrated = migrateData(data);
+  localStorage.setItem(P14_STORAGE_KEY, JSON.stringify(migrated));
+}
+
+function resetData() {
+  const data = emptyData();
+  saveData(data);
+  return data;
+}
+
+function exportData(data) {
+  return JSON.stringify(migrateData(data), null, 2);
+}
+
+function importData(raw) {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("ساختار فایل پشتیبان معتبر نیست.");
+  }
+  const hasUsefulData = raw.buildingInfo || raw.building || Array.isArray(raw.units) || Array.isArray(raw.payments) || Array.isArray(raw.expenses) || Array.isArray(raw.billProfiles) || Array.isArray(raw.billPayments);
+  if (!hasUsefulData) {
+    throw new Error("این فایل شبیه فایل پشتیبان P14 نیست.");
+  }
+  const data = migrateData(raw);
+  saveData(data);
+  return data;
+}
+
+function getLastLoadWarning() {
+  return lastLoadWarning;
+}
+
 window.P14DB = {
+  storageKey: P14_STORAGE_KEY,
+  appDataVersion: P14_APP_DATA_VERSION,
   months: P14_MONTHS,
   billTypes: P14_BILL_TYPES,
+  allocationMethods: P14_ALLOCATION_METHODS,
   loadData,
   saveData,
   resetData,
+  exportData,
+  importData,
   ensureUnits,
   p14Id,
   toPersianDigits,
   toEnglishDigits,
   parseAmount,
+  parseSafeNumber,
   isNumericText,
   formatInputNumber,
-  formatMoney
+  formatMoney,
+  allocationLabel,
+  defaultAllocationForBillType,
+  getLastLoadWarning
 };
