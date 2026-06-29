@@ -4,47 +4,65 @@ struct ContentView: View {
     @StateObject private var store = P14Store()
 
     var body: some View {
-        TabView {
-            DashboardView(store: store)
-                .tabItem {
-                    Label("داشبورد", systemImage: "chart.bar.fill")
-                }
+        ZStack {
+            // Background gradient
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.95, green: 0.97, blue: 1.0),
+                    Color(red: 0.98, green: 0.96, blue: 1.0)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            UnitsView(store: store)
-                .tabItem {
-                    Label("واحدها", systemImage: "building.2.fill")
-                }
+            TabView {
+                EnhancedDashboardView(store: store)
+                    .tabItem {
+                        Label("داشبورد", systemImage: "chart.bar.fill")
+                    }
 
-            AddPaymentView(store: store)
-                .tabItem {
-                    Label("پرداخت", systemImage: "plus.circle.fill")
-                }
+                ImprovedUnitsView(store: store)
+                    .tabItem {
+                        Label("واحدها", systemImage: "building.2.fill")
+                    }
 
-            AddExpenseView(store: store)
-                .tabItem {
-                    Label("هزینه", systemImage: "minus.circle.fill")
-                }
+                ImprovedAddPaymentView(store: store)
+                    .tabItem {
+                        Label("پرداخت", systemImage: "plus.circle.fill")
+                    }
 
-            BillProfilesView(store: store)
-                .tabItem {
-                    Label("قبض ها", systemImage: "doc.plaintext.fill")
-                }
+                ImprovedAddExpenseView(store: store)
+                    .tabItem {
+                        Label("هزینه", systemImage: "minus.circle.fill")
+                    }
 
-            DebtorsView(store: store)
-                .tabItem {
-                    Label("بدهکاران", systemImage: "person.crop.circle.badge.exclamationmark")
-                }
+                ImprovedBillProfilesView(store: store)
+                    .tabItem {
+                        Label("قبض ها", systemImage: "doc.plaintext.fill")
+                    }
 
-            ReportView(store: store)
-                .tabItem {
-                    Label("گزارش", systemImage: "doc.text.fill")
-                }
+                ImprovedDebtorsView(store: store)
+                    .tabItem {
+                        Label("بدهکاران", systemImage: "person.crop.circle.badge.exclamationmark")
+                    }
 
-            BuildingSettingsView(store: store)
-                .tabItem {
-                    Label("ساختمان", systemImage: "gearshape.fill")
-                }
+                ImprovedReportView(store: store)
+                    .tabItem {
+                        Label("گزارش", systemImage: "doc.text.fill")
+                    }
+
+                ImprovedBuildingSettingsView(store: store)
+                    .tabItem {
+                        Label("ساختمان", systemImage: "gearshape.fill")
+                    }
+            }
+            .environment(\.layoutDirection, .rightToLeft)
+            .tint(.blue)
         }
-        .environment(\.layoutDirection, .rightToLeft)
     }
+}
+
+#Preview {
+    ContentView()
 }
